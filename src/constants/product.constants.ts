@@ -1,0 +1,7 @@
+export const MILLISECONDS_PER_DAY = 1000 * 60 * 60 * 24;
+
+export const PRODUCT_TYPE = {
+	NORMAL: 'NORMAL',
+	SEASONAL: 'SEASONAL',
+	EXPIRABLE: 'EXPIRABLE',
+} as const;

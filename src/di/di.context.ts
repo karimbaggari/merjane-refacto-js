@@ -4,15 +4,19 @@ import {type FastifyBaseLogger, type FastifyInstance} from 'fastify';
 import {type INotificationService} from '@/services/notifications.port.js';
 import {NotificationService} from '@/services/impl/notification.service.js';
 import {type Database} from '@/db/type.js';
-import {ProductService} from '@/services/impl/product.service.js';
+import {ProductRepository} from '@/repositories/product.repository.js';
+import {ProductHelper} from '@/helpers/product.helper.js';
+import {OrderService} from '@/services/order.service.js';
 
 declare module '@fastify/awilix' {
 
 	interface Cradle { // eslint-disable-line @typescript-eslint/consistent-type-definitions
 		logger: FastifyBaseLogger;
 		db: Database;
-		ns: INotificationService;
-		ps: ProductService;
+		notificationService: INotificationService;
+		productRepository: ProductRepository;
+		productHelper: ProductHelper;
+		orderService: OrderService;
 	}
 }
 
@@ -21,15 +25,11 @@ export async function configureDiContext(
 ): Promise<void> {
 	diContainer.register({
 		logger: asValue(server.log),
-	});
-	diContainer.register({
 		db: asValue(server.database),
-	});
-	diContainer.register({
-		ns: asClass(NotificationService),
-	});
-	diContainer.register({
-		ps: asClass(ProductService),
+		notificationService: asClass(NotificationService),
+		productRepository: asClass(ProductRepository),
+		productHelper: asClass(ProductHelper),
+		orderService: asClass(OrderService),
 	});
 }
 
