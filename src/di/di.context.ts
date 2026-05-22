@@ -5,8 +5,9 @@ import {type INotificationService} from '@/services/notifications.port.js';
 import {NotificationService} from '@/services/impl/notification.service.js';
 import {type Database} from '@/db/type.js';
 import {ProductRepository} from '@/repositories/product.repository.js';
+import {OrderRepository} from '@/repositories/order.repository.js';
 import {ProductHelper} from '@/helpers/product.helper.js';
-import {OrderService} from '@/services/order.service.js';
+import {OrderService} from '@/services/impl/order.service.js';
 
 declare module '@fastify/awilix' {
 
@@ -15,6 +16,7 @@ declare module '@fastify/awilix' {
 		db: Database;
 		notificationService: INotificationService;
 		productRepository: ProductRepository;
+		orderRepository: OrderRepository;
 		productHelper: ProductHelper;
 		orderService: OrderService;
 	}
@@ -28,6 +30,7 @@ export async function configureDiContext(
 		db: asValue(server.database),
 		notificationService: asClass(NotificationService),
 		productRepository: asClass(ProductRepository),
+		orderRepository: asClass(OrderRepository),
 		productHelper: asClass(ProductHelper),
 		orderService: asClass(OrderService),
 	});

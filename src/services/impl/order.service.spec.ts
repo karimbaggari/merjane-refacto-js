@@ -5,9 +5,10 @@ import {
 import {mockDeep, type DeepMockProxy} from 'vitest-mock-extended';
 import {type INotificationService} from '../notifications.port.js';
 import {createDatabaseMock, cleanUp} from '../../utils/test-utils/database-tools.ts.js';
-import {OrderService} from '../order.service.js';
+import {OrderService} from './order.service.js';
 import {ProductHelper} from '@/helpers/product.helper.js';
 import {ProductRepository} from '@/repositories/product.repository.js';
+import {OrderRepository} from '@/repositories/order.repository.js';
 import {products, orders, ordersToProducts, type Product} from '@/db/schema.js';
 import {type Database} from '@/db/type.js';
 import {eq} from 'drizzle-orm';
@@ -24,11 +25,12 @@ describe('OrderService Tests', () => {
 		notificationServiceMock = mockDeep<INotificationService>();
 
 		const productRepository = new ProductRepository({db: databaseMock});
+		const orderRepository = new OrderRepository({db: databaseMock});
 		const productHelper = new ProductHelper({
 			notificationService: notificationServiceMock,
 			productRepository,
 		});
-		orderService = new OrderService({productHelper, productRepository});
+		orderService = new OrderService({productHelper, orderRepository});
 	});
 
 	afterEach(async () => {
@@ -93,7 +95,7 @@ describe('OrderService Tests', () => {
 
 	it('should send out of stock notification when season has not started yet', async () => {
 		// GIVEN
-		const {orderId} = insertOrderWithProduct(databaseMock, {
+		const {orderId, productId} = insertOrderWithProduct(databaseMock, {
 			leadTime: 15,
 			available: 30,
 			type: 'SEASONAL',
@@ -108,6 +110,10 @@ describe('OrderService Tests', () => {
 
 		// THEN
 		expect(notificationServiceMock.sendOutOfStockNotification).toHaveBeenCalledWith('Grapes');
+		const result = await databaseMock.query.products.findFirst({
+			where: eq(products.id, productId),
+		});
+		expect(result!.available).toBe(30);
 	});
 
 	it('should send delay notification when in season and lead time fits within season', async () => {
@@ -169,6 +175,55 @@ describe('OrderService Tests', () => {
 
 		// THEN
 		expect(notificationServiceMock.sendExpirationNotification).toHaveBeenCalledWith('Milk', expiryDate);
+		const result = await databaseMock.query.products.findFirst({
+			where: eq(products.id, productId),
+		});
+		expect(result!.available).toBe(0);
+	});
+
+	it('should treat product expiring today as expired', async () => {
+		// GIVEN
+		const today = new Date();
+		today.setHours(0, 0, 0, 0);
+		const {orderId, productId} = insertOrderWithProduct(databaseMock, {
+			leadTime: 15,
+			available: 5,
+			type: 'EXPIRABLE',
+			name: 'Yogurt',
+			expiryDate: today, // expire aujourd'hui
+			seasonStartDate: null,
+			seasonEndDate: null,
+		});
+
+		// WHEN
+		await orderService.processOrder(orderId);
+
+		// THEN
+		expect(notificationServiceMock.sendExpirationNotification).toHaveBeenCalledWith('Yogurt', today);
+		const result = await databaseMock.query.products.findFirst({
+			where: eq(products.id, productId),
+		});
+		expect(result!.available).toBe(0);
+	});
+
+	it('should notify out of stock when season ends today and leadTime pushes past', async () => {
+		// GIVEN
+		const now = new Date();
+		const {orderId, productId} = insertOrderWithProduct(databaseMock, {
+			leadTime: 1,
+			available: 0,
+			type: 'SEASONAL',
+			name: 'Pumpkin',
+			expiryDate: null,
+			seasonStartDate: new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000)), // il y a 30 jours
+			seasonEndDate: now, // se termine aujourd'hui
+		});
+
+		// WHEN
+		await orderService.processOrder(orderId);
+
+		// THEN
+		expect(notificationServiceMock.sendOutOfStockNotification).toHaveBeenCalledWith('Pumpkin');
 		const result = await databaseMock.query.products.findFirst({
 			where: eq(products.id, productId),
 		});

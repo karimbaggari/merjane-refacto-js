@@ -1,6 +1,6 @@
 import {type Product} from '@/db/schema.js';
 import {type ProductHelper} from '@/helpers/product.helper.js';
-import {type ProductRepository} from '@/repositories/product.repository.js';
+import {type OrderRepository} from '@/repositories/order.repository.js';
 import {PRODUCT_TYPE} from '@/constants/product.constants.js';
 import {
 	isAvailable,
@@ -13,20 +13,20 @@ import {
 
 type OrderServiceDeps = {
 	productHelper: ProductHelper;
-	productRepository: ProductRepository;
+	orderRepository: OrderRepository;
 };
 
 export class OrderService {
 	private readonly productHelper: ProductHelper;
-	private readonly productRepository: ProductRepository;
+	private readonly orderRepository: OrderRepository;
 
-	public constructor({productHelper, productRepository}: OrderServiceDeps) {
+	public constructor({productHelper, orderRepository}: OrderServiceDeps) {
 		this.productHelper = productHelper;
-		this.productRepository = productRepository;
+		this.orderRepository = orderRepository;
 	}
 
 	public async processOrder(orderId: number): Promise<{orderId: number}> {
-		const order = await this.productRepository.findOrderWithProducts(orderId);
+		const order = await this.orderRepository.findOrderWithProducts(orderId);
 		if (!order) {
 			throw new Error(`Order not found: ${orderId}`);
 		}
@@ -35,7 +35,7 @@ export class OrderService {
 
 		if (productList) {
 			for (const {product} of productList) {
-				await this.processProduct(product); // eslint-disable-line no-await-in-loop
+				await this.processProduct(product);
 			}
 		}
 
@@ -69,7 +69,7 @@ export class OrderService {
 		if (isAvailable(product)) {
 			await this.productHelper.decrementStock(product);
 		} else if (hasLeadTime(product)) {
-			await this.productHelper.notifyDelay(product);
+			this.productHelper.notifyDelay(product);
 		}
 	}
 
@@ -77,11 +77,12 @@ export class OrderService {
 		if (isInSeason(product) && isAvailable(product)) {
 			await this.productHelper.decrementStock(product);
 		} else if (!canBeRestockedInSeason(product)) {
-			await this.productHelper.notifyOutOfStock(product);
+			await this.productHelper.clearInventory(product);
+			this.productHelper.notifyOutOfStock(product);
 		} else if (!hasSeasonStarted(product)) {
-			await this.productHelper.notifyOutOfStock(product);
+			this.productHelper.notifyOutOfStock(product);
 		} else {
-			await this.productHelper.notifyDelay(product);
+			this.productHelper.notifyDelay(product);
 		}
 	}
 
@@ -89,7 +90,8 @@ export class OrderService {
 		if (isAvailable(product) && !isExpired(product)) {
 			await this.productHelper.decrementStock(product);
 		} else {
-			await this.productHelper.notifyExpired(product);
+			await this.productHelper.clearInventory(product);
+			this.productHelper.notifyExpired(product);
 		}
 	}
 }

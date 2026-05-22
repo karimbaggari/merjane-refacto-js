@@ -305,6 +305,10 @@ describe("MyController Integration Tests", () => {
     expect(
       notificationServiceMock.sendOutOfStockNotification
     ).toHaveBeenCalledWith("Grapes");
+    const result = await database.query.products.findFirst({
+      where: eq(products.id, productId),
+    });
+    expect(result!.available).toBe(30);
   });
 
   it("should send delay notification for SEASONAL in season with leadTime fitting", async () => {
@@ -399,6 +403,77 @@ describe("MyController Integration Tests", () => {
     expect(
       notificationServiceMock.sendExpirationNotification
     ).toHaveBeenCalledWith("Milk", expiryDate);
+    const result = await database.query.products.findFirst({
+      where: eq(products.id, productId),
+    });
+    expect(result!.available).toBe(0);
+  });
+
+  it("should treat product expiring today as expired", async () => {
+    const client = supertest(fastify.server);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const productId = database
+      .insert(products)
+      .values({
+        leadTime: 15,
+        available: 5,
+        type: "EXPIRABLE",
+        name: "Yogurt",
+        expiryDate: today, // expire aujourd'hui
+      })
+      .returning({ id: products.id })
+      .get().id;
+
+    const orderId = database
+      .insert(orders)
+      .values({})
+      .returning({ orderId: orders.id })
+      .get().orderId;
+    database.insert(ordersToProducts).values({ orderId, productId }).run();
+
+    await client.post(`/orders/${orderId}/processOrder`).expect(200);
+
+    expect(
+      notificationServiceMock.sendExpirationNotification
+    ).toHaveBeenCalledWith("Yogurt", today);
+    const result = await database.query.products.findFirst({
+      where: eq(products.id, productId),
+    });
+    expect(result!.available).toBe(0);
+  });
+
+  it("should notify out of stock when season ends today and leadTime pushes past", async () => {
+    const client = supertest(fastify.server);
+    const now = new Date();
+    const d = 24 * 60 * 60 * 1000;
+
+    const productId = database
+      .insert(products)
+      .values({
+        leadTime: 1,
+        available: 0,
+        type: "SEASONAL",
+        name: "Pumpkin",
+        seasonStartDate: new Date(now.getTime() - 30 * d), // il y a 30 jours
+        seasonEndDate: now, // se termine aujourd'hui
+      })
+      .returning({ id: products.id })
+      .get().id;
+
+    const orderId = database
+      .insert(orders)
+      .values({})
+      .returning({ orderId: orders.id })
+      .get().orderId;
+    database.insert(ordersToProducts).values({ orderId, productId }).run();
+
+    await client.post(`/orders/${orderId}/processOrder`).expect(200);
+
+    expect(
+      notificationServiceMock.sendOutOfStockNotification
+    ).toHaveBeenCalledWith("Pumpkin");
     const result = await database.query.products.findFirst({
       where: eq(products.id, productId),
     });
